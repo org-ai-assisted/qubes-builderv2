@@ -51,6 +51,20 @@ TEMPLATE_REPOSITORIES = [
 ]
 
 
+def source_date_epoch_from_template_timestamp(timestamp: str) -> str:
+    ## Reproducible-build epoch (integer seconds, UTC) from a TEMPLATE_TIMESTAMP
+    ## ("%Y%m%d%H%M"). qubes-builderv2 otherwise names only TEMPLATE_TIMESTAMP (consumed
+    ## by the RPM build); the in-chroot content -- notably the initializer-dist SBOM hook
+    ## -- reads the standard SOURCE_DATE_EPOCH, so bridge the one timestamp to the other.
+    return str(
+        int(
+            datetime.datetime.strptime(timestamp, "%Y%m%d%H%M")
+            .replace(tzinfo=datetime.UTC)
+            .timestamp()
+        )
+    )
+
+
 class TemplateError(PluginError):
     pass
 
@@ -787,7 +801,14 @@ class TemplateBuilderPlugin(TemplatePlugin):
                 ).strftime("%Y%m%d%H%M")
 
             self.template.timestamp = template_timestamp
-            self.environment.update({"TEMPLATE_TIMESTAMP": template_timestamp})
+            self.environment.update(
+                {
+                    "TEMPLATE_TIMESTAMP": template_timestamp,
+                    "SOURCE_DATE_EPOCH": source_date_epoch_from_template_timestamp(
+                        template_timestamp
+                    ),
+                }
+            )
 
             copy_in = self.default_copy_in(
                 self.executor.get_plugins_dir(), self.executor.get_sources_dir()
@@ -855,7 +876,12 @@ class TemplateBuilderPlugin(TemplatePlugin):
                 return
 
             self.environment.update(
-                {"TEMPLATE_TIMESTAMP": self.template.timestamp}
+                {
+                    "TEMPLATE_TIMESTAMP": self.template.timestamp,
+                    "SOURCE_DATE_EPOCH": source_date_epoch_from_template_timestamp(
+                        self.template.timestamp
+                    ),
+                }
             )
 
             rpm_fn = f"qubes-template-{self.template.name}-{self.get_template_version()}-{self.template.timestamp}.noarch.rpm"
